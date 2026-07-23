@@ -1,10 +1,37 @@
 import os
+import subprocess
 import yt_dlp
-from pydub import AudioSegment
 
 # Directory to store downloaded audio
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+
+def _ffmpeg_to_wav(input_path: str, output_path: str) -> str:
+    """
+    Use ffmpeg subprocess to convert any audio/video file to
+    16 kHz mono WAV. Avoids pydub / audioop dependency that was
+    removed in Python 3.13+.
+    """
+    cmd = [
+        "ffmpeg",
+        "-y",                  # overwrite output without asking
+        "-i", input_path,
+        "-ac", "1",            # mono
+        "-ar", "16000",        # 16 kHz sample rate (Whisper-friendly)
+        "-vn",                 # strip video
+        output_path,
+    ]
+    result = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg conversion failed:\n{result.stderr.decode(errors='replace')}"
+        )
+    return output_path
 
 
 def download_youtube_audio(url: str) -> str:
@@ -12,11 +39,11 @@ def download_youtube_audio(url: str) -> str:
     Download audio from a YouTube URL and convert it to WAV format.
     Returns the path to the downloaded WAV file.
     """
-    output_path = os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s")
+    output_template = os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s")
 
     ydl_opts = {
         "format": "bestaudio/best",
-        "outtmpl": output_path,
+        "outtmpl": output_template,
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
@@ -37,43 +64,65 @@ def download_youtube_audio(url: str) -> str:
 
 def convert_to_wav(input_path: str) -> str:
     """
-    Convert any local audio/video file to
-    16 kHz mono WAV (Whisper-friendly).
+    Convert any local audio/video file to 16 kHz mono WAV
+    using ffmpeg directly (no pydub / audioop).
     """
     output_path = os.path.splitext(input_path)[0] + "_converted.wav"
-
-    audio = AudioSegment.from_file(input_path)
-    audio = audio.set_channels(1)
-    audio = audio.set_frame_rate(16000)
-
-    audio.export(output_path, format="wav")
-
-    return output_path
+    return _ffmpeg_to_wav(input_path, output_path)
 
 
-def chunk_audio(wav_path: str, chunk_minutes: int = 10) -> list[str]:
+def chunk_audio(wav_path: str, chunk_minutes: int = 10) -> list:
     """
-    Split a WAV file into chunks of `chunk_minutes`.
+    Split a WAV file into chunks of `chunk_minutes` using ffmpeg.
     Returns a list of chunk file paths.
     """
-    audio = AudioSegment.from_wav(wav_path)
+    # Get total duration via ffprobe
+    probe_cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        wav_path,
+    ]
+    probe = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if probe.returncode != 0:
+        raise RuntimeError(
+            f"ffprobe failed:\n{probe.stderr.decode(errors='replace')}"
+        )
 
-    chunk_ms = chunk_minutes * 60 * 1000
+    total_seconds = float(probe.stdout.decode().strip())
+    chunk_seconds = chunk_minutes * 60
+    base_name = os.path.splitext(wav_path)[0]
     chunks = []
 
-    base_name = os.path.splitext(wav_path)[0]
-
-    for i, start in enumerate(range(0, len(audio), chunk_ms)):
-        chunk = audio[start:start + chunk_ms]
-        chunk_path = f"{base_name}_chunk_{i + 1}.wav"
-
-        chunk.export(chunk_path, format="wav")
+    start = 0.0
+    i = 1
+    while start < total_seconds:
+        chunk_path = f"{base_name}_chunk_{i}.wav"
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-ss", str(start),
+            "-t", str(chunk_seconds),
+            "-i", wav_path,
+            "-ac", "1",
+            "-ar", "16000",
+            chunk_path,
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"ffmpeg chunking failed at chunk {i}:\n"
+                f"{result.stderr.decode(errors='replace')}"
+            )
         chunks.append(chunk_path)
+        start += chunk_seconds
+        i += 1
 
     return chunks
 
 
-def process_input(source: str) -> list[str]:
+def process_input(source: str) -> list:
     """
     Accepts either:
     - A YouTube URL
