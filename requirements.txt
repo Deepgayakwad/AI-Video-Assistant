@@ -8,6 +8,7 @@ streamlit>=1.37.0
 # ============================
 yt-dlp>=2025.6.30
 ffmpeg-python>=0.2.0
+youtube-transcript-api>=0.6.2
 
 # ============================
 # Faster Whisper

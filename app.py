@@ -3,7 +3,7 @@ import streamlit as st
 
 from dotenv import load_dotenv
 
-from utils.audio_processor import process_input
+from utils.audio_processor import process_input, get_youtube_transcript
 from core.transcriber import transcribe_all
 from core.summarizer import summarize, generate_title
 from core.extractor import extract_action_items, extract_key_decisions, extract_questions
@@ -322,8 +322,10 @@ if run_btn:
         st.session_state.result = None
         st.session_state.chat_history = []
 
+        is_youtube = source.strip().startswith(("http://", "https://"))
+
         steps = [
-            ("audio",      "🔊 Processing audio…"),
+            ("audio",      "📋 Fetching YouTube transcript…" if is_youtube else "🔊 Processing audio…"),
             ("transcript", "📝 Transcribing…"),
             ("title",      "🏷️ Generating title…"),
             ("summary",    "📋 Summarising…"),
@@ -336,10 +338,16 @@ if run_btn:
             # run, so the user actually sees progress instead of a static message.
             with st.status("Starting pipeline…", expanded=True) as status:
                 status.update(label=steps[0][1])
-                chunks = process_input(source)
 
-                status.update(label=steps[1][1])
-                transcript = transcribe_all(chunks, language)
+                if is_youtube:
+                    # ── YouTube path: fetch captions directly (no audio download)
+                    # This bypasses all 403 / cloud-IP blocks from yt-dlp.
+                    transcript = get_youtube_transcript(source.strip())
+                else:
+                    # ── Local file path: ffmpeg → WAV chunks → Whisper
+                    chunks = process_input(source)
+                    status.update(label=steps[1][1])
+                    transcript = transcribe_all(chunks, language)
 
                 status.update(label=steps[2][1])
                 title = generate_title(transcript)

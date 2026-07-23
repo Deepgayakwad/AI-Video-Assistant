@@ -1,10 +1,54 @@
 import os
+import re
 import subprocess
 import yt_dlp
 
 # Directory to store downloaded audio
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+
+def get_youtube_transcript(url: str) -> str:
+    """
+    Fetch the transcript/captions of a YouTube video directly
+    using the YouTube Transcript API — no audio download required.
+    Works from any server IP (no 403 errors).
+
+    Returns the full transcript as a single string.
+    Raises RuntimeError if no transcript is available.
+    """
+    from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
+
+    # Extract video ID from various YouTube URL formats
+    match = re.search(
+        r"(?:v=|youtu\.be/|embed/|shorts/)([a-zA-Z0-9_-]{11})",
+        url,
+    )
+    if not match:
+        raise ValueError(f"Could not extract video ID from URL: {url}")
+
+    video_id = match.group(1)
+
+    try:
+        # Try English first, then any available language
+        try:
+            entries = YouTubeTranscriptApi.get_transcript(video_id, languages=["en"])
+        except NoTranscriptFound:
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            # Fall back to first available transcript (auto-generated or manual)
+            transcript_obj = next(iter(transcript_list))
+            entries = transcript_obj.fetch()
+
+        full_text = " ".join(entry["text"] for entry in entries)
+        return full_text.strip()
+
+    except TranscriptsDisabled:
+        raise RuntimeError(
+            "This video has transcripts/captions disabled. "
+            "Please try a different video or upload a local audio file."
+        )
+    except Exception as e:
+        raise RuntimeError(f"Could not fetch YouTube transcript: {e}")
 
 
 def _ffmpeg_to_wav(input_path: str, output_path: str) -> str:
