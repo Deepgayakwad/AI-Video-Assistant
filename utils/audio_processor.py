@@ -14,10 +14,10 @@ def get_youtube_transcript(url: str) -> str:
     using the YouTube Transcript API — no audio download required.
     Works from any server IP (no 403 errors).
 
+    Compatible with youtube-transcript-api v0.6.x+ (instance-based API).
     Returns the full transcript as a single string.
-    Raises RuntimeError if no transcript is available.
     """
-    from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
+    from youtube_transcript_api import YouTubeTranscriptApi
 
     # Extract video ID from various YouTube URL formats
     match = re.search(
@@ -30,25 +30,38 @@ def get_youtube_transcript(url: str) -> str:
     video_id = match.group(1)
 
     try:
-        # Try English first, then any available language
+        # v0.6.x uses an instantiated object, not static class methods
+        api = YouTubeTranscriptApi()
+
+        # Try English first, then fall back to any available language
         try:
-            entries = YouTubeTranscriptApi.get_transcript(video_id, languages=["en"])
-        except NoTranscriptFound:
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            # Fall back to first available transcript (auto-generated or manual)
-            transcript_obj = next(iter(transcript_list))
-            entries = transcript_obj.fetch()
+            fetched = api.fetch(video_id, languages=["en"])
+        except Exception:
+            try:
+                # No language filter — pick whatever is available
+                fetched = api.fetch(video_id)
+            except Exception:
+                # Last resort: list transcripts and grab the first one
+                transcript_list = api.list(video_id)
+                first = next(iter(transcript_list))
+                fetched = first.fetch()
 
-        full_text = " ".join(entry["text"] for entry in entries)
-        return full_text.strip()
+        # Handle both dict entries (old API) and Snippet objects (new API)
+        parts = []
+        for entry in fetched:
+            if isinstance(entry, dict):
+                parts.append(entry.get("text", ""))
+            else:
+                parts.append(getattr(entry, "text", str(entry)))
 
-    except TranscriptsDisabled:
-        raise RuntimeError(
-            "This video has transcripts/captions disabled. "
-            "Please try a different video or upload a local audio file."
-        )
+        return " ".join(parts).strip()
+
     except Exception as e:
-        raise RuntimeError(f"Could not fetch YouTube transcript: {e}")
+        raise RuntimeError(
+            f"Could not fetch YouTube transcript: {e}. "
+            "Make sure the video has captions/subtitles enabled."
+        )
+
 
 
 def _ffmpeg_to_wav(input_path: str, output_path: str) -> str:
