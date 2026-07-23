@@ -51,8 +51,24 @@ def download_youtube_audio(url: str) -> str:
                 "preferredquality": "192",
             }
         ],
+        # Use Android client to bypass 403 blocks on cloud server IPs
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"],
+            }
+        },
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Linux; Android 13; Pixel 7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/116.0.0.0 Mobile Safari/537.36"
+            ),
+        },
         "quiet": True,
         "noplaylist": True,
+        "no_warnings": False,
+        "age_limit": None,
+        "geo_bypass": True,
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
