@@ -1,7 +1,7 @@
 import os
 import shutil
 
-from langchain_chroma import Chroma
+from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -10,8 +10,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 # Configuration
 # =====================================================
 
-CHROMA_DIR = "vector_db"
-COLLECTION_NAME = "meeting_transcript"
+FAISS_DIR = "vector_db"
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
@@ -34,16 +33,16 @@ def get_embeddings():
 # Build Vector Store
 # =====================================================
 
-def build_vector_store(transcript: str) -> Chroma:
+def build_vector_store(transcript: str) -> FAISS:
     """
-    Build a Chroma vector database from the meeting transcript.
+    Build a FAISS vector database from the meeting transcript.
     """
 
     print("\nBuilding Vector Store...")
 
     # Remove previous vector database
-    if os.path.exists(CHROMA_DIR):
-        shutil.rmtree(CHROMA_DIR)
+    if os.path.exists(FAISS_DIR):
+        shutil.rmtree(FAISS_DIR)
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
@@ -74,12 +73,13 @@ def build_vector_store(transcript: str) -> Chroma:
 
     embeddings = get_embeddings()
 
-    vector_store = Chroma.from_documents(
+    vector_store = FAISS.from_documents(
         documents=documents,
         embedding=embeddings,
-        collection_name=COLLECTION_NAME,
-        persist_directory=CHROMA_DIR,
     )
+
+    # Persist to disk
+    vector_store.save_local(FAISS_DIR)
 
     print(f"Indexed {len(documents)} chunks.")
     print("Vector Store created successfully.\n")
@@ -91,12 +91,12 @@ def build_vector_store(transcript: str) -> Chroma:
 # Load Existing Vector Store
 # =====================================================
 
-def load_vector_store() -> Chroma:
+def load_vector_store() -> FAISS:
     """
-    Load an existing Chroma database.
+    Load an existing FAISS database.
     """
 
-    if not os.path.exists(CHROMA_DIR):
+    if not os.path.exists(FAISS_DIR):
         raise FileNotFoundError(
             "Vector database not found. "
             "Run build_vector_store() first."
@@ -104,10 +104,10 @@ def load_vector_store() -> Chroma:
 
     embeddings = get_embeddings()
 
-    vector_store = Chroma(
-        collection_name=COLLECTION_NAME,
-        embedding_function=embeddings,
-        persist_directory=CHROMA_DIR,
+    vector_store = FAISS.load_local(
+        FAISS_DIR,
+        embeddings,
+        allow_dangerous_deserialization=True,
     )
 
     return vector_store
@@ -117,7 +117,7 @@ def load_vector_store() -> Chroma:
 # Retriever
 # =====================================================
 
-def get_retriever(vector_store: Chroma, k: int = 4):
+def get_retriever(vector_store: FAISS, k: int = 4):
     """
     Create a retriever from the vector database.
     """

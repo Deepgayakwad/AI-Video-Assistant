@@ -37,8 +37,7 @@ mistralai>=1.5.0
 # ============================
 # Embeddings & RAG
 # ============================
-chromadb>=0.5.5
-langchain-chroma>=0.1.4
+faiss-cpu>=1.8.0
 sentence-transformers>=3.0.1
 langchain-huggingface>=0.1.2
 huggingface-hub>=0.24.0
