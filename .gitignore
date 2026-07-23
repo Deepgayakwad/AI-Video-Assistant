@@ -1,0 +1,56 @@
+# === Environment & Secrets ===
+.env
+*.env.*
+!.env.example
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+
+# === Virtual Environment ===
+.venv/
+venv/
+env/
+ENV/
+.Python
+
+# === Downloads & Generated Files ===
+downloads/
+*.mp3
+*.mp4
+*.wav
+*.m4a
+*.webm
+
+# === Vector DB (auto-generated at runtime) ===
+vector_db/
+
+# === Transcripts & Summaries (runtime output) ===
+transcript.txt
+summary.txt
+
+# === IDE / Editor ===
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# === Streamlit ===
+.streamlit/secrets.toml
+
+# === Misc ===
+*.log
+*.tmp
+.cache/
