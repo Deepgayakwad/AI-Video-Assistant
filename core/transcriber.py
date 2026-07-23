@@ -1,9 +1,9 @@
 import os
+import subprocess
 
 import requests
 from dotenv import load_dotenv
 from faster_whisper import WhisperModel
-from pydub import AudioSegment
 
 load_dotenv()
 
@@ -110,35 +110,62 @@ def _send_to_sarvam(piece_path: str) -> str:
 # SARVAM TRANSCRIPTION
 # =====================================================
 
+def _get_duration(wav_path: str) -> float:
+    """Return audio duration in seconds using ffprobe."""
+    probe_cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        wav_path,
+    ]
+    result = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffprobe failed:\n{result.stderr.decode(errors='replace')}")
+    return float(result.stdout.decode().strip())
+
+
 def transcribe_chunk_sarvam(chunk_path: str) -> str:
 
     if not SARVAM_API_KEY:
         raise RuntimeError("SARVAM_API_KEY not found in .env")
 
-    audio = AudioSegment.from_wav(chunk_path)
-
-    piece_ms = SARVAM_PIECE_SECONDS * 1000
-
+    total_seconds = _get_duration(chunk_path)
+    piece_seconds = SARVAM_PIECE_SECONDS
     transcript = ""
+    i = 0
+    start = 0.0
+    total = int(total_seconds / piece_seconds) + 1
 
-    total = (len(audio) + piece_ms - 1) // piece_ms
-
-    for i, start in enumerate(range(0, len(audio), piece_ms)):
-
-        piece = audio[start:start + piece_ms]
-
+    while start < total_seconds:
         piece_path = f"{chunk_path}_piece_{i}.wav"
 
-        piece.export(piece_path, format="wav")
+        # Extract piece using ffmpeg
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(start),
+            "-t", str(piece_seconds),
+            "-i", chunk_path,
+            "-ac", "1",
+            "-ar", "16000",
+            piece_path,
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"ffmpeg piece extraction failed at piece {i}:\n"
+                f"{result.stderr.decode(errors='replace')}"
+            )
 
         try:
             print(f"Processing Sarvam piece {i+1}/{total}...")
-
             transcript += _send_to_sarvam(piece_path) + " "
-
         finally:
             if os.path.exists(piece_path):
                 os.remove(piece_path)
+
+        start += piece_seconds
+        i += 1
 
     return transcript.strip()
 
